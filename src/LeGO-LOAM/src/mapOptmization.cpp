@@ -461,11 +461,42 @@ public:
         float salz = sin(transformAftMapped[2]);
         float calz = cos(transformAftMapped[2]);
 
+
+        //R_transformTobe = R_transformAft * R_transformBef^-1 * R_transformSum
+        /*
+            R = |crycrz+srxsrysrz  srxsrycrz-crysrz  crxsry|
+                |crxsrz  crxcrz  -srx|
+                |srxcrysrz-srycrz  srxcrycrz+srysrz  crxcry|
+                
+            
+            R_transformAft = |calycalz+salxsalysalz  salxsalycalz-calysalz  calxsaly|
+                             |calxsalz  calxcalz  -salx|
+                             |salycalysalz-salycalz  salxcalycalz+salysalz  calxcaly|
+            R_transformBef^-1 = |cblycblz+sblxsblysblz  cblxsblz  sblxcblysblz-sblycblz|
+                                |sblxsblycblz-cblysblz  cblxcblz  sblxcblycblz+sblysblz|
+                                |cblxsbly  -sblx  cblxcbly|
+            R_transformSum = |cbcycbcz+sbcxsbcysbcz  sbcxsbcysbcz-cbcysbcz  cbcxsbcy|
+                             |cbcxsbcz  cbcxcbcz  -sbcx|
+                             |sbcxcbcysbcz-sbcycbcz  sbcxcbcycbcz+sbcysbcz  cbcxcbcy|
+        
+        */
+
+        /*
+            srx = (calxsalz*(cblycblz+sblxsblysblz) + calxcalz*(sblxsblycblz-cblysblz) + (-salx)*(cblxsbly))*cbcxsbcy
+                + (calxsalz*(cblxsblz) + (calxcalz)*(cblxcblz) + (-salx)*(-sblx))*(-sbcx)
+                + (calxsalz*(sblxcblysblz-sblycblz) + (calxcalz)*(sblxcblycblz+sblysblz) + (-salx)*(cblxcbly))*cbcxcbcy
+               
+                = -sbcx*(calxsalz*cblxsblz + calxcalz*cblxcblz + salxsblx)
+                + cbcxsbcy*(calxcalz*(sblxsblycblz-cblysblz) + calxsalz*(cblycblz+sblxsblysblz) + (-salx)*(cblxsbly))
+                + cbcxcbcy*(calxsalz*(sblxcblysblz-sblycblz) + calxcalz*(sblxcblycblz+sblysblz) + (-salx)*(cblxcbly))
+
+                = -sbcx*(salxsblx + calxcblxsalzsblz + calxcalzcblxcblz)
+                - cbcxsbcy*(calxsalz*(cblysblz-sblxsblycblz) - calxsalz*(cblycblz+sblxsblysblz) + salxcblxsbly)
+                - cbcxcbcy*(calxsalz*(sbly-cblz-sblxcblysblz) - calxcalz*(sblxcblycblz+sblysblz) + salxcblxcbly)
+        */
         float srx = -sbcx*(salx*sblx + calx*cblx*salz*sblz + calx*calz*cblx*cblz)
-                  - cbcx*sbcy*(calx*calz*(cbly*sblz - cblz*sblx*sbly)
-                  - calx*salz*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sbly)
-                  - cbcx*cbcy*(calx*salz*(cblz*sbly - cbly*sblx*sblz) 
-                  - calx*calz*(sbly*sblz + cbly*cblz*sblx) + cblx*cbly*salx);
+                  - cbcx*sbcy*(calx*calz*(cbly*sblz - cblz*sblx*sbly)-calx*salz*(cbly*cblz + sblx*sbly*sblz) + cblx*salx*sbly)
+                  - cbcx*cbcy*(calx*salz*(cblz*sbly - cbly*sblx*sblz)-calx*calz*(sbly*sblz + cbly*cblz*sblx) + cblx*cbly*salx);
         transformTobeMapped[0] = -asin(srx);
 
         float srycrx = sbcx*(cblx*cblz*(caly*salz - calz*salx*saly)
@@ -496,14 +527,20 @@ public:
         transformTobeMapped[2] = atan2(srzcrx / cos(transformTobeMapped[0]), 
                                        crzcrx / cos(transformTobeMapped[0]));
 
+        /*
+            T_tobe = T_aft - R_tobe * T_incre
+        */
+        //roll旋转
         x1 = cos(transformTobeMapped[2]) * transformIncre[3] - sin(transformTobeMapped[2]) * transformIncre[4];
         y1 = sin(transformTobeMapped[2]) * transformIncre[3] + cos(transformTobeMapped[2]) * transformIncre[4];
         z1 = transformIncre[5];
 
+        //pitch旋转
         x2 = x1;
         y2 = cos(transformTobeMapped[0]) * y1 - sin(transformTobeMapped[0]) * z1;
         z2 = sin(transformTobeMapped[0]) * y1 + cos(transformTobeMapped[0]) * z1;
 
+        //yaw旋转
         transformTobeMapped[3] = transformAftMapped[3] 
                                - (cos(transformTobeMapped[1]) * x2 + sin(transformTobeMapped[1]) * z2);
         transformTobeMapped[4] = transformAftMapped[4] - y2;
@@ -769,7 +806,7 @@ public:
         }
     }
 
-    //保存地图
+    //显示地图
     void publishGlobalMap(){
 
         if (pubLaserCloudSurround.getNumSubscribers() == 0)
@@ -943,12 +980,21 @@ public:
         Eigen::Affine3f correctionCameraFrame;
         correctionCameraFrame = icp.getFinalTransformation();   //匹配结果
         pcl::getTranslationAndEulerAngles(correctionCameraFrame, x, y, z, roll, pitch, yaw);    //旋转矩阵转6个自由度
+        /*
+            x_map = y_lidar y_map = z_lidar z_map = x_lidar
 
+            X0 = R_correct * (R_累积 * Xi + T_累积) + T_correct
+               = R_correct * R_累积 * Xi + R_corrent * T_累积 + T_correct
+               = (correctionLidarFrame * tWorng) * Xi
+        
+            R = R_yaw *  R_pitch * R_roll
+              = R_ry * R_rx * R_rz
+        */
         Eigen::Affine3f correctionLidarFrame = pcl::getTransformation(z, x, y, yaw, roll, pitch);  //6个自由度转旋转矩阵
         Eigen::Affine3f tWrong = pclPointToAffine3fCameraToLidar(cloudKeyPoses6D->points[latestFrameIDLoopCloure]);   //原始计算得到的位姿
         Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;           //真实的位姿
         pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);     //旋转矩阵转6个自由度
-        gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
+        gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));   // ???
         gtsam::Pose3 poseTo = pclPointTogtsamPose3(cloudKeyPoses6D->points[closestHistoryFrameID]);
         gtsam::Vector Vector6(6);
         float noiseScore = icp.getFitnessScore();
@@ -956,6 +1002,8 @@ public:
         constraintNoise = noiseModel::Diagonal::Variances(Vector6);
 
         std::lock_guard<std::mutex> lock(mtx);
+        //latestFrameIDLoopClosure--->poseFrom
+        //closestHistoryFrameID--->poseTo
         gtSAMgraph.add(BetweenFactor<Pose3>(latestFrameIDLoopCloure, closestHistoryFrameID, poseFrom.between(poseTo), constraintNoise));
         isam->update(gtSAMgraph);
         isam->update();
@@ -1468,8 +1516,6 @@ public:
         else{
 
             /*
-                R_tobe = R_yaw * R_pitch * R_roll 
-                       = R_ry * R_rx * R_rz
                 transform: 2->yaw   0->pitch   1->roll
             */
             //上一个关键帧的位姿
@@ -1483,6 +1529,15 @@ public:
             initialEstimate.insert(cloudKeyPoses3D->points.size(), Pose3(Rot3::RzRyRx(transformAftMapped[2], transformAftMapped[0], transformAftMapped[1]),
                                                                      		   Point3(transformAftMapped[5], transformAftMapped[3], transformAftMapped[4])));
         }
+
+        
+        /*
+        地面约束添加
+        gtsam::Rot3 rotFrom = gtsam::Rot3::RzRyRx(transformAftMapped[2], transformAftMapped[0], transformAftMapped[1]);  
+        gtsam::Rot3 rotTo = gtsam::Rot3::RzRyRx(transformAftMapped[2], 0, 0);
+        gtSAMgraph.add(BetweenFactor<Rot3>(cloudKeyPoses3D->points.size()-1, cloudKeyPoses3D->points.size(), rotFrom.between(rotTo), odometryNoise));
+        */
+
 
         //优化
         isam->update(gtSAMgraph, initialEstimate);
